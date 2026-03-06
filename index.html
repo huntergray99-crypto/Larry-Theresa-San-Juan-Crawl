@@ -1,0 +1,877 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Viejo San Juan — Cruise Day Guide</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1923;
+    --panel: #151f2b;
+    --panel2: #1a2738;
+    --border: rgba(255,255,255,0.07);
+    --accent: #00c9b1;
+    --gold: #f5b942;
+    --white: #e8edf2;
+    --muted: rgba(232,237,242,0.5);
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; font-family: -apple-system, 'Segoe UI', sans-serif; background: var(--bg); color: var(--white); overflow: hidden; }
+
+  /* ── LAYOUT ── */
+  #app { display: flex; height: 100vh; }
+  #sidebar {
+    width: 340px; min-width: 340px;
+    background: var(--panel);
+    display: flex; flex-direction: column;
+    border-right: 1px solid var(--border);
+    z-index: 10;
+  }
+  #map-wrap { flex: 1; position: relative; }
+  #map { width: 100%; height: 100%; }
+
+  /* ── HEADER ── */
+  #header {
+    padding: 16px 16px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  #header-top {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 12px;
+  }
+  #header h1 {
+    font-size: 15px; font-weight: 700; color: var(--white);
+    line-height: 1.2;
+  }
+  #header .sub {
+    font-size: 11px; color: var(--muted);
+    margin-top: 2px;
+  }
+  .flag-icon { font-size: 26px; }
+
+  /* SCHEDULE BAR */
+  #schedule {
+    display: flex; gap: 6px;
+    padding: 10px 0 14px;
+    overflow-x: auto;
+  }
+  #schedule::-webkit-scrollbar { display: none; }
+  .sched-chip {
+    flex-shrink: 0;
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 9px;
+    font-size: 10px; font-weight: 600;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .sched-chip span { color: var(--accent); display: block; font-size: 11px; }
+
+  /* ── SEARCH & FILTER ── */
+  #controls { padding: 12px 14px; border-bottom: 1px solid var(--border); }
+  #search-wrap { position: relative; margin-bottom: 10px; }
+  #search-wrap svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); opacity: 0.4; }
+  #search {
+    width: 100%; padding: 9px 10px 9px 34px;
+    background: var(--panel2); border: 1px solid var(--border);
+    border-radius: var(--radius); color: var(--white);
+    font-size: 13px; outline: none;
+    transition: border-color 0.2s;
+  }
+  #search:focus { border-color: var(--accent); }
+  #search::placeholder { color: var(--muted); }
+  #filters { display: flex; gap: 5px; flex-wrap: wrap; }
+  .filter-btn {
+    font-size: 11px; font-weight: 600; padding: 4px 10px;
+    border-radius: 20px; border: 1px solid var(--border);
+    background: transparent; color: var(--muted);
+    cursor: pointer; transition: all 0.15s; white-space: nowrap;
+  }
+  .filter-btn.active { border-color: currentColor; }
+  .filter-btn:hover { opacity: 0.85; }
+
+  /* ── LOCATION LIST ── */
+  #list { flex: 1; overflow-y: auto; padding: 8px 0; }
+  #list::-webkit-scrollbar { width: 4px; }
+  #list::-webkit-scrollbar-track { background: transparent; }
+  #list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+  .list-item {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 10px 14px; cursor: pointer;
+    border-left: 3px solid transparent;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .list-item:hover { background: var(--panel2); }
+  .list-item.active { background: var(--panel2); }
+  .list-icon {
+    width: 30px; height: 30px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; flex-shrink: 0; margin-top: 1px;
+  }
+  .list-text { flex: 1; min-width: 0; }
+  .list-name { font-size: 13px; font-weight: 600; color: var(--white); }
+  .list-desc { font-size: 11px; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* ── GEOLOCATION BTN ── */
+  #geo-btn {
+    position: absolute; bottom: 20px; right: 14px; z-index: 500;
+    width: 44px; height: 44px; border-radius: 50%;
+    background: var(--panel); border: 1px solid var(--border);
+    color: var(--accent); font-size: 20px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    transition: all 0.2s;
+  }
+  #geo-btn:hover { background: var(--panel2); transform: scale(1.05); }
+  #geo-btn.active { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+
+  /* BACK-TO-SHIP */
+  #ship-btn {
+    position: absolute; bottom: 72px; right: 10px; z-index: 500;
+    background: var(--panel); border: 1px solid var(--border);
+    color: var(--white); font-size: 11px; font-weight: 700;
+    padding: 8px 12px; border-radius: 8px; cursor: pointer;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    display: flex; align-items: center; gap: 6px;
+    transition: all 0.2s;
+  }
+  #ship-btn:hover { background: var(--panel2); }
+
+  /* ── CUSTOM PIN ICONS ── */
+  .pin-wrap {
+    width: 32px; height: 40px;
+    display: flex; align-items: flex-start; justify-content: center;
+    position: relative;
+  }
+  .pin-body {
+    width: 30px; height: 30px;
+    border-radius: 50% 50% 50% 0;
+    transform: rotate(-45deg);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.45);
+    border: 2px solid rgba(255,255,255,0.35);
+    transition: all 0.2s;
+  }
+  .pin-body span { transform: rotate(45deg); font-size: 13px; display: block; }
+  .pin-wrap.active .pin-body {
+    width: 38px; height: 38px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.6);
+    border-color: rgba(255,255,255,0.8);
+  }
+
+  /* ── POPUP ── */
+  .leaflet-popup-content-wrapper {
+    background: var(--panel) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 14px !important;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6) !important;
+    padding: 0 !important;
+    overflow: hidden;
+    width: 290px !important;
+  }
+  .leaflet-popup-content { margin: 0 !important; width: 100% !important; }
+  .leaflet-popup-tip-container { display: none; }
+  .leaflet-popup-close-button {
+    color: var(--muted) !important;
+    font-size: 18px !important;
+    top: 8px !important; right: 10px !important;
+    z-index: 10;
+  }
+  .popup-top {
+    padding: 16px 16px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .popup-cat {
+    font-size: 10px; font-weight: 700;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    margin-bottom: 5px;
+  }
+  .popup-name {
+    font-size: 16px; font-weight: 700; color: var(--white);
+    padding-right: 20px;
+  }
+  .popup-body { padding: 12px 16px; }
+  .popup-badges {
+    display: flex; flex-wrap: wrap; gap: 5px;
+    margin-bottom: 10px;
+  }
+  .badge {
+    font-size: 10px; font-weight: 600;
+    padding: 3px 8px; border-radius: 20px;
+    background: rgba(255,255,255,0.07);
+    color: var(--muted);
+  }
+  .popup-desc {
+    font-size: 12.5px; color: var(--muted);
+    line-height: 1.65; margin-bottom: 10px;
+  }
+  .popup-tip {
+    background: rgba(0,201,177,0.08);
+    border-left: 2px solid var(--accent);
+    padding: 7px 10px; border-radius: 4px;
+    font-size: 11.5px; color: rgba(232,237,242,0.75);
+    line-height: 1.55; margin-bottom: 12px;
+  }
+  .popup-tip strong { color: var(--accent); }
+  .popup-actions { display: flex; gap: 7px; }
+  .popup-btn {
+    flex: 1; padding: 9px 6px; border-radius: 8px;
+    font-size: 11px; font-weight: 700;
+    text-align: center; text-decoration: none;
+    transition: all 0.15s; cursor: pointer; border: none;
+    display: flex; align-items: center; justify-content: center; gap: 4px;
+  }
+  .popup-btn.primary {
+    background: var(--accent); color: #0a1a16;
+  }
+  .popup-btn.primary:hover { background: #00e0c5; }
+  .popup-btn.secondary {
+    background: var(--panel2); color: var(--white);
+    border: 1px solid var(--border);
+  }
+  .popup-btn.secondary:hover { background: rgba(255,255,255,0.08); }
+
+  /* STREET VIEW MODAL */
+  #sv-modal {
+    display: none; position: fixed; inset: 0; z-index: 9999;
+    background: rgba(0,0,0,0.85); align-items: center; justify-content: center;
+  }
+  #sv-modal.show { display: flex; }
+  #sv-box {
+    background: var(--panel); border-radius: 14px;
+    overflow: hidden; width: 90vw; max-width: 800px;
+    border: 1px solid var(--border);
+    box-shadow: 0 30px 80px rgba(0,0,0,0.7);
+  }
+  #sv-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  #sv-title { font-size: 14px; font-weight: 700; }
+  #sv-close {
+    background: none; border: none; color: var(--muted);
+    font-size: 22px; cursor: pointer; line-height: 1;
+    transition: color 0.15s;
+  }
+  #sv-close:hover { color: var(--white); }
+  #sv-frame { width: 100%; height: 450px; border: none; display: block; }
+
+  /* YOU ARE HERE dot */
+  .you-here {
+    width: 16px; height: 16px; border-radius: 50%;
+    background: #4a9eff;
+    border: 3px solid white;
+    box-shadow: 0 0 0 4px rgba(74,158,255,0.3), 0 0 16px rgba(74,158,255,0.5);
+  }
+
+  /* WALKING ROUTE INFO */
+  #route-info {
+    position: absolute; top: 14px; left: 14px; z-index: 500;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 10px 14px;
+    font-size: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    max-width: 220px;
+  }
+  #route-info strong { color: var(--accent); font-size: 13px; display: block; margin-bottom: 3px; }
+  #route-info span { color: var(--muted); }
+
+  /* CLOCK */
+  #clock {
+    position: absolute; top: 14px; right: 14px; z-index: 500;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 8px 14px;
+    font-size: 13px; font-weight: 700;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    display: flex; flex-direction: column; align-items: center;
+  }
+  #clock-time { color: var(--white); font-size: 18px; }
+  #clock-status { font-size: 10px; font-weight: 600; margin-top: 2px; }
+
+  /* MOBILE */
+  @media (max-width: 640px) {
+    #app { flex-direction: column; }
+    #sidebar { width: 100%; min-width: unset; height: 45vh; border-right: none; border-bottom: 1px solid var(--border); }
+    #map-wrap { flex: 1; }
+    #sv-frame { height: 260px; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- SIDEBAR -->
+  <div id="sidebar">
+    <div id="header">
+      <div id="header-top">
+        <span class="flag-icon">🇵🇷</span>
+        <div>
+          <h1>Viejo San Juan</h1>
+          <div class="sub">Cruise Day Walking Guide · 1:00 PM – 7:30 PM</div>
+        </div>
+      </div>
+      <div id="schedule">
+        <div class="sched-chip"><span>1:00 PM</span>Disembark</div>
+        <div class="sched-chip"><span>1:15 PM</span>Paseo Princesa</div>
+        <div class="sched-chip"><span>2:00 PM</span>El Morro</div>
+        <div class="sched-chip"><span>3:30 PM</span>Cat Park</div>
+        <div class="sched-chip"><span>4:00 PM</span>Old Town</div>
+        <div class="sched-chip"><span>5:30 PM</span>Dinner/Drinks</div>
+        <div class="sched-chip"><span>7:00 PM</span>Back to Ship</div>
+      </div>
+    </div>
+
+    <div id="controls">
+      <div id="search-wrap">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <input type="text" id="search" placeholder="Search locations…" oninput="filterLocations()">
+      </div>
+      <div id="filters"></div>
+    </div>
+
+    <div id="list"></div>
+  </div>
+
+  <!-- MAP -->
+  <div id="map-wrap">
+    <div id="map"></div>
+
+    <div id="route-info">
+      <strong>🗺️ Cruise Day Loop</strong>
+      <span>~3.5 miles total · Flat + some hills</span>
+    </div>
+
+    <div id="clock">
+      <div id="clock-time">--:--</div>
+      <div id="clock-status" style="color:var(--accent)">Puerto Rico Time</div>
+    </div>
+
+    <button id="ship-btn" onclick="flyToShip()">🚢 Back to Ship</button>
+    <button id="geo-btn" onclick="locateMe()" title="Find my location">📍</button>
+  </div>
+</div>
+
+<!-- STREET VIEW MODAL -->
+<div id="sv-modal">
+  <div id="sv-box">
+    <div id="sv-header">
+      <div id="sv-title">Street View</div>
+      <button id="sv-close" onclick="closeSV()">×</button>
+    </div>
+    <iframe id="sv-frame" src="" allowfullscreen></iframe>
+  </div>
+</div>
+
+<script>
+// ── MAP INIT ──
+const map = L.map('map', {
+  center: [18.4675, -66.1185],
+  zoom: 15,
+  zoomControl: false
+});
+
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+  attribution: 'Esri World Imagery',
+  maxZoom: 20
+}).addTo(map);
+
+L.control.zoom({ position: 'bottomleft' }).addTo(map);
+
+// ── LOCATION DATA ──
+const locations = [
+
+  // ── CRUISE PORT ──
+  { id: 1, cat: 'cruise', icon: '🚢', color: '#2196f3',
+    name: 'Cruise Terminal — Pier 3 / Pier 4', lat: 18.463122, lng: -66.111741,
+    badges: ['Start & End Here','Taxis at Exit','Free WiFi in Terminal'],
+    desc: 'Your home base for the day. Pier 3 serves Royal Caribbean\'s Oasis-class ships, Norwegian, Virgin, Oceania and Regent. Pier 4 handles Carnival, MSC and Holland America. When you exit the terminal, turn LEFT along the waterfront — you\'ll immediately hit Plaza Dársenas and the start of Paseo de la Princesa.',
+    tip: '⏰ Be back here no later than 7:00 PM. It\'s a 25–30 min walk from El Morro, so plan accordingly. Taxis are about $5–7 from anywhere in Old San Juan.',
+    sv: '18.4618,-66.1124' },
+
+  // ── WALK ROUTE ──
+  { id: 2, cat: 'walk', icon: '🌳', color: '#00c9b1',
+    name: 'Paseo del Morro — Wall Path', lat: 18.465166, lng: -66.119440,
+    badges: ['Iconic City Gate','Must See','Ocean Views','~0.75 Miles One Way'],
+    desc: 'The legendary coastal walkway that hugs the ancient Spanish city walls from the San Juan Gate all the way out to El Morro fortress. This is the most scenic stretch of pavement in all of Puerto Rico — open Atlantic on one side, 500-year-old walls on the other. You\'ll pass garitas (guard towers), wild cats, the cemetery overlook, and views of La Perla below.',
+    tip: '🌞 Zero shade on this path — bring water and wear sunscreen. Path is open daily 6 AM–10 PM and is monitored by park staff. Stay on the designated trail. The cats here are cared for by Save A Gato — you can admire them but please don\'t feed them.',
+    sv: '18.465166,-66.119440' },
+
+  // ── LANDMARKS ──
+  { id: 3, cat: 'landmark', icon: '⛲', color: '#f5b942',
+    name: 'Fuente Raíces (Roots Fountain)', lat: 18.463342, lng: -66.118547,
+    badges: ['Best Photo in OSJ','Free','Cultural Icon','End of Paseo'],
+    desc: 'One of the most stunning public sculptures in the Caribbean — a massive bronze fountain at the end of Paseo de la Princesa where the promenade meets the ancient city walls. Three monumental figures rising from the water represent Puerto Rico\'s three cultural roots: African, Taíno indigenous, and Spanish colonial. Created by sculptor Luis Soto in 1992. The backdrop of the city walls and San Juan Bay makes this one of the most photographed spots on the island.',
+    tip: '📸 Best angle: stand slightly to the right with the bay visible behind the figures. Early afternoon light hits it perfectly. This is right before you pass through the San Juan Gate — don\'t miss it.',
+    sv: '18.463342,-66.118547' },
+
+  { id: 4, cat: 'landmark', icon: '🚪', color: '#f5b942',
+    name: 'Puerta de San Juan (San Juan Gate)', lat: 18.465101, lng: -66.119527,
+    badges: ['Only Surviving City Gate','Built 1630s','UNESCO World Heritage'],
+    desc: 'The only remaining original entrance gate through the massive Spanish colonial city walls. For 300 years, this was the ceremonial entrance to the city — arriving ships\' passengers and dignitaries would pass through here, walk up the cobblestone ramp, and head directly to the Cathedral to give thanks for safe passage. The gate is set into walls that are up to 20 feet thick and 40 feet tall. Walking through it is one of the great chills of Old San Juan.',
+    tip: '📸 Classic shot: stand back on the promenade side and frame the gate against the walls. Then turn around inside and shoot down the cobblestone ramp toward the bay. The thick walls make for incredible framing both ways.',
+    sv: '18.465101,-66.119527' },
+
+  { id: 5, cat: 'landmark', icon: '⛩️', color: '#f5b942',
+    name: 'Plaza del Quinto Centenario', lat: 18.467792, lng: -66.118999,
+    badges: ['Totem Pole Sculpture','Views to El Morro','Free','Open Air'],
+    desc: 'Dramatic open-air plaza built in 1992 to commemorate the 500th anniversary of Columbus\'s arrival in the Americas. Dominated by the striking Tótem Telúrico — a 40-foot black granite totem pole designed by Jaime Suárez that rises from a layered platform of geometric shapes. From the plaza\'s edge you get a sweeping view across the esplanade toward El Morro. Fountains, benches, and wide-open space. Often less crowded than nearby attractions.',
+    tip: '📸 Stand behind the totem pole looking northwest — you get the sculpture in the foreground with El Morro\'s towers visible across the green lawns. Excellent shot at any time of day.',
+    sv: '18.467792,-66.118999' },
+
+  { id: 6, cat: 'landmark', icon: '⛪', color: '#f5b942',
+    name: 'Catedral de San Juan Bautista & Tomb of Juan Ponce de León', lat: 18.465942, lng: -66.118046,
+    badges: ['Oldest Cathedral in W. Hemisphere','Built 1521','Ponce de León Tomb','Mummified Saint','Free Entry'],
+    desc: 'One of the oldest and most historically significant churches in the entire Western Hemisphere, built in 1521 — the same year the city was founded. Inside you\'ll find the marble tomb of Juan Ponce de León, Puerto Rico\'s first Spanish governor and the explorer who sought the Fountain of Youth. Also on display is the glass-encased, partially mummified body of Saint Pio, a Roman martyr brought here in 1862. The cathedral has been destroyed by hurricanes, rebuilt, and modified over five centuries, resulting in a remarkable mix of Gothic arches and New World colonial detail. The vaulted ceiling, stained glass, and frescoes are all stunning.',
+    tip: '🙏 Free to enter — just dress modestly (no bare shoulders or shorts). The interior is cool and beautiful, a great break from the heat. Ponce de León\'s tomb is in a side alcove — look for the marble sarcophagus with the coat of arms. The mummified saint is toward the back left.',
+    sv: '18.465942,-66.118046' },
+
+  { id: 7, cat: 'landmark', icon: '🏰', color: '#f5b942',
+    name: 'La Fortaleza (Governor\'s Mansion)', lat: 18.4652, lng: -66.1178,
+    badges: ['Oldest Governor\'s Mansion','Built 1533','Free Tours Mon–Fri','Pink Facade'],
+    desc: 'The oldest executive mansion in continuous use in the Western Hemisphere — built in 1533 originally as a military stronghold before El Morro was constructed. For nearly 500 years it has served as the official residence and working office of Puerto Rico\'s governor. The candy-pink and white facade draped with flowering vines is one of the most iconic images in the Caribbean. The interior features a Moorish garden, chapel, original Spanish tiles, and a surprisingly interesting dungeon.',
+    tip: 'Free guided tours available Monday–Friday 9 AM–3:30 PM — well worth the 45 minutes. Even if you skip the tour, the facade on Calle Fortaleza is incredible to photograph. Look up — the balconies are stunning.',
+    sv: '18.4652,-66.1178' },
+
+  // ── FORTS ──
+  { id: 8, cat: 'fort', icon: '⚔️', color: '#e74c3c',
+    name: 'Castillo San Felipe del Morro (El Morro)', lat: 18.4706, lng: -66.1247,
+    badges: ['$10 Entry','Open 9 AM–6 PM','National Historic Site','2–3 Hours','Kids Under 15 FREE'],
+    desc: 'The crown jewel of Old San Juan and Puerto Rico\'s most visited attraction. Construction began in 1539; the fortress was completed in 1790, making it one of the oldest Spanish forts in the New World. Built on a dramatic promontory at the tip of the peninsula, El Morro rises six levels above the crashing Atlantic. Inside: barracks, cannon batteries, a dark dungeon, original Spanish moat, lighthouse, tunnels, and panoramic views in every direction. The fort withstood attacks by Sir Francis Drake in 1595, the Earl of Cumberland in 1598, and the Dutch in 1625.',
+    tip: '🎟️ Keep your ticket — it\'s good for El Morro AND Fort San Cristóbal (near the cruise terminal). Plan 1.5–2 hours minimum. Arrive early or after 2 PM to avoid peak crowds. The top-level lighthouse deck has the best 360° views on the island. Kids love the dungeon.',
+    sv: '18.4706,-66.1247' },
+
+  { id: 9, cat: 'fort', icon: '🗼', color: '#e74c3c',
+    name: 'El Espigón — La Garita del Diablo', lat: 18.468388, lng: -66.110319,
+    badges: ['Devil\'s Sentry Box','Legend & Lore','Best Atlantic Views','Photo Op'],
+    desc: 'The most haunted and mysterious spot in Old San Juan. The "Devil\'s Sentry Box" (Garita del Diablo) is a lone guard tower perched at the very tip of the northeastern city wall, jutting out over the crashing Atlantic. Colonial legend says soldiers stationed here mysteriously vanished without a trace — no signs of struggle, no bodies, just gone. The Spanish blamed the devil. Today it\'s one of the most dramatic viewpoints in the city, with open ocean on three sides and the old city walls stretching back behind you.',
+    tip: '📸 One of the most photogenic spots in OSJ. Shoot from below looking up at the garita silhouetted against the sky, or from the top looking down at the waves. Best in afternoon light when the sun hits the stone walls. Accessible from the walk along Calle Norzagaray.',
+    sv: '18.468388,-66.110319' },
+
+  // ── ATTRACTION ──
+  { id: 10, cat: 'attraction', icon: '🐱', color: '#ff7eb3',
+    name: 'Parque de los Gatos — Cat Colony', lat: 18.466150, lng: -66.121863,
+    badges: ['Free','60+ Cats','Ocean Views','Save A Gato Org','Bring Treats'],
+    desc: 'One of the most unique and beloved stops in Old San Juan — a small park along the city walls that is home to a thriving colony of 60+ community cats. These are the famous "cobblestone cats" of Viejo San Juan, descendants of cats originally brought to control rats in colonial times. Every cat has been spayed/neutered, vaccinated, and is cared for by Save A Gato, a nonprofit organization. Many cats have clipped ears (the TNR marker) and are surprisingly friendly. There are feeding stations, benches, and stunning ocean views from the park.',
+    tip: '🐱 Most cats are very approachable — walk slowly and let them come to you. Look for clipped ears (means they\'re fixed and healthy). Technically you\'re not supposed to feed them (Save A Gato handles feeding), but you can absolutely pet them. The Save A Gato store nearby sells cat-themed merch if you want to support the cause.',
+    sv: '18.466150,-66.121863' },
+
+  // ── COBBLESTONE STREETS ──
+  { id: 11, cat: 'walk', icon: '🪨', color: '#00c9b1',
+    name: 'Calle del Cristo — Cobblestone Street', lat: 18.466456, lng: -66.118286,
+    badges: ['Blue Ballast Cobblestones','Historic Shopping Street','El Convento Hotel','Capilla del Cristo'],
+    desc: 'The most famous street in Old San Juan and one of the most historically intact colonial streets in the Americas. The distinctive blue-gray cobblestones are actually ballast stones from Spanish ships — brought over as weight and used to pave the streets when ships were loaded with New World cargo for the return voyage. Calle del Cristo runs the full length of the historic district from the city walls down to Plaza de Armas, flanked by 500-year-old buildings, boutiques, galleries, the elegant El Convento Hotel (a former 17th-century convent), and the tiny Capilla del Cristo chapel at the southern end.',
+    tip: '📸 Best shot: stand at the lower end and look north up the full length of the street — you get the colorful facades, cobblestones, and the cathedral dome in the distance. Wear shoes with grip; the stones are beautiful but can be slippery.',
+    sv: '18.466456,-66.118286' },
+
+  { id: 12, cat: 'walk', icon: '🎨', color: '#00c9b1',
+    name: 'Calle San Sebastián — Nightlife Street', lat: 18.467315, lng: -66.117416,
+    badges: ['Best Bar Street in OSJ','Colorful Buildings','La Factoría Here','Festival Street'],
+    desc: 'The vibrant, colorful artery of Old San Juan\'s social life. Lined with brilliantly-painted colonial buildings, art galleries, boutiques, and some of the best bars in the Caribbean. This is where La Factoría — ranked among the World\'s 50 Best Bars — calls home. Every January the street hosts the famous San Sebastián Street Festival, one of Puerto Rico\'s biggest cultural events. The street runs east-west and connects the main plazas; walk its full length to soak up the authentic vibe.',
+    tip: 'Best explored in late afternoon when the golden light hits the colored facades. Even at 1–2 PM bars are open — this is Puerto Rico, after all. La Factoría is unmarked; look for "Hijos de Borinquén" above the door at the corner of San Sebastián and San José.',
+    sv: '18.467315,-66.117416' },
+
+  // ── BARS ──
+  { id: 13, cat: 'bar', icon: '🍹', color: '#c0392b',
+    name: 'La Factoría', lat: 18.4672, lng: -66.11706,
+    badges: ['World\'s 50 Best Bars','6 Hidden Bars Inside','Open from 11 AM','Lavender Mule'],
+    desc: 'Puerto Rico\'s most celebrated bar and one of the most acclaimed cocktail destinations in the entire world — ranked in the World\'s 50 Best Bars multiple times. From the outside it looks like nothing: an old building with a faded sign reading "Hijos de Borinquén." Step inside and you\'ll find not one bar but six, each hidden behind a door or through a passage, each with its own theme, music, and menu. La Facto (front bar) is the original 1950s revolutionary café. Through the swing doors: Vino (intimate wine bar). Through another door: El Shingaling (salsa/live music). Deeper in: a red neon room for late-night dancing. And hidden at the back: El Desvío (10 seats, candlelight, perfect cocktails) and La Cubanita (the old bodega).',
+    tip: '🍸 Signature drink: the Lavender Mule (ginger beer, vodka, homemade lavender syrup). Open from 11 AM — perfect for a 1 PM cruise day stop. Go through EVERY door you find. Most tourists only see the first bar. Must be 23+ with ID.',
+    sv: '18.4672,-66.11706' },
+
+  { id: 14, cat: 'bar', icon: '🍺', color: '#c0392b',
+    name: 'El Batey Bar', lat: 18.466256, lng: -66.118249,
+    badges: ['Best Dive Bar in OSJ','101 Calle Cristo','Cash Only','Open from 3 PM','Pool Table'],
+    desc: 'Old San Juan\'s most iconic dive bar, tucked at 101 Calle del Cristo and beloved by locals and travelers alike for decades. Walking into El Batey is like walking into a living time capsule — the walls are completely covered in graffiti, stickers, business cards, and written messages from visitors going back years. Cheap drinks served in plastic cups. A legendary jukebox with an eclectic mix. A bumper pool table in the back. No pretense, no velvet rope, no cocktail menu. Just cold beer, strong rum, and the best crowd in town.',
+    tip: '💵 Cash only — no cards. Opens at 3 PM, so go early before it fills up. The jukebox alone is worth the visit. If you want one "local bar" experience in Old San Juan, this is it. Strong pours, cheap prices, no BS.',
+    sv: '18.466256,-66.118249' },
+
+  { id: 15, cat: 'bar', icon: '🥃', color: '#c0392b',
+    name: 'La Casita de Rones — Rum Bar', lat: 18.463506, lng: -66.114443,
+    badges: ['All Puerto Rican Rums','Steps from Pier','Try Before You Buy','Piña Coladas'],
+    desc: 'The little pink rum shack right at Plaza Dársenas — steps from the cruise terminal gangway. This is the ideal first stop after disembarking. Puerto Rico is the rum capital of the world, producing roughly 70% of all rum sold in the US. La Casita specializes exclusively in Puerto Rican rums and lets you sample before you buy. Order a piña colada (invented in San Juan in 1954), a rum flight comparing Bacardí, Don Q, Ron del Barrilito, Palo Viejo, and Reserva Antigua, or a fresh-squeezed rum punch.',
+    tip: '🍹 The piña colada was invented just down the street at the Caribe Hilton in 1954 — so drinking one here is historically appropriate. Try the Don Q Reserva rum — it\'s Puerto Rico\'s best kept secret and rarely found outside the island. Great place to start AND end the day.',
+    sv: '18.463506,-66.114443' },
+
+  // ── FOOD ──
+  { id: 16, cat: 'food', icon: '🍽️', color: '#27ae60',
+    name: 'Deaverdura', lat: 18.466731, lng: -66.116573,
+    badges: ['Most Authentic PR Food in OSJ','200 Calle Sol','Blackboard Menu','~$12–18/person','Cash Preferred'],
+    desc: 'The most authentic, unfussy, locally-loved Puerto Rican restaurant in all of Old San Juan. No frills, no pretense — just a small room, a handwritten blackboard menu in Spanish, and deeply flavorful traditional food. The menu rotates daily but expect: pernil (slow-roasted pork shoulder), arroz con habichuelas (rice and beans), mofongo, bacalaíto (salt cod fritters), alcapurrias (yuca stuffed with beef), tostones, and piononos. The fresh fruit juices — tamarind, guanábana, acerola — are unlike anything you can get back home. Servers are warm, multilingual, and will walk you through everything on the board.',
+    tip: '⏰ Can have a significant wait during peak hours (12–2 PM). Go right at 1 PM when it opens or after 3 PM for shorter waits. Bring cash — they prefer it. Try the tamarind juice. If they have the PR sampler board, order it. Portions are modest — order 2–3 dishes per person.' },
+
+  // ── PHOTO SPOTS ──
+  { id: 17, cat: 'photo', icon: '🎭', color: '#9b59b6',
+    name: 'Plazuela La Rogativa', lat: 18.465593, lng: -66.119691,
+    badges: ['Dramatic Bronze Sculpture','City Walls Overlook','Bay Views','Sunset Spot'],
+    desc: 'A small, stunning plaza tucked into the city walls with one of the most dramatic sculptures in Old San Juan. The La Rogativa monument depicts a torchlit procession led by the Bishop of San Juan — a scene from 1797 when British forces had besieged the city for two weeks. According to legend, the bishop organized a nighttime religious procession of women carrying torches and ringing bells. The British commanders, seeing the lights and hearing the bells from the sea, mistook it for Spanish military reinforcements arriving and retreated, saving the city. The three bronze figures — bishop, torch-bearing women — rise powerfully over the bay. The view from this plaza over San Juan Bay is extraordinary.',
+    tip: '📸 This is one of the most underrated photo spots in OSJ. Shoot the sculpture from below looking up with the bay behind it. Magical at golden hour. The plaza is quiet and tends to be less crowded than nearby spots — take your time here.' },
+
+  { id: 18, cat: 'photo', icon: '📸', color: '#9b59b6',
+    name: 'El Morro Kite Lawn — Photo Esplanade', lat: 18.4695, lng: -66.1232,
+    badges: ['Best View of El Morro','Kite Vendors On-Site','Wide Open Lawn','Picnic Spot'],
+    desc: 'The vast green esplanade stretching from the city entrance to El Morro\'s walls is one of the most scenic open spaces in Puerto Rico. Vendors sell kites right here on the lawn — flying a kite in front of a 500-year-old fort over the Atlantic is a pretty rare experience. The lawn is also popular for picnics, sunbathing, and simply sitting in the grass watching the fort loom overhead. From different positions on the lawn you get completely different compositions of the fortress.',
+    tip: '📸 Three killer shots: (1) low to the ground looking along the lawn toward the fort walls; (2) from the fort entrance looking back at the city skyline; (3) from the seawall edge looking down at the crashing waves with the fort above. Kites cost about $5–8 from vendors.' },
+
+  // ── PRACTICAL ──
+  { id: 19, cat: 'practical', icon: '💊', color: '#7f8c8d',
+    name: 'Walgreens — Old San Juan', lat: 18.463963, lng: -66.112053,
+    badges: ['ATM Inside','Sunscreen & Bug Spray','Cold Water','Air Conditioned','Open Daily'],
+    desc: 'The most conveniently located Walgreens in Old San Juan, just a few blocks from the cruise terminal. Has an ATM (useful since many local spots prefer cash), sunscreen, insect repellent, cold water and sports drinks, snacks, over-the-counter meds, and anything else you might have forgotten. The air conditioning is a genuine relief on a hot PR afternoon.',
+    tip: '💡 Stop here early in the day before heading to El Morro. Pick up: sunscreen (UV is intense in Puerto Rico year-round), cold water bottles, and cash from the ATM if you\'re planning on Deaverdura or El Batey. Don\'t get caught without sunscreen on the wall path — zero shade.' },
+
+];
+
+// ── CATEGORIES ──
+const cats = {
+  cruise:     { label: 'Cruise Port',   color: '#2196f3' },
+  walk:       { label: 'Walk Route',    color: '#00c9b1' },
+  fort:       { label: 'Forts',         color: '#e74c3c' },
+  landmark:   { label: 'Landmarks',     color: '#f5b942' },
+  attraction: { label: 'Attractions',   color: '#ff7eb3' },
+  bar:        { label: 'Bars',          color: '#e74c3c' },
+  food:       { label: 'Food',          color: '#27ae60' },
+  photo:      { label: 'Photo Spots',   color: '#9b59b6' },
+  practical:  { label: 'Practical',     color: '#95a5a6' },
+};
+
+// ── FILTERS ──
+let activeFilter = 'all';
+
+function buildFilters() {
+  const wrap = document.getElementById('filters');
+  const allBtn = document.createElement('button');
+  allBtn.className = 'filter-btn active';
+  allBtn.textContent = 'All';
+  allBtn.style.color = '#e8edf2';
+  allBtn.style.borderColor = '#e8edf2';
+  allBtn.onclick = () => setFilter('all', allBtn);
+  wrap.appendChild(allBtn);
+
+  Object.entries(cats).forEach(([key, c]) => {
+    const btn = document.createElement('button');
+    btn.className = 'filter-btn';
+    btn.textContent = c.label;
+    btn.style.color = c.color;
+    btn.onclick = () => setFilter(key, btn);
+    wrap.appendChild(btn);
+  });
+}
+
+function setFilter(key, btn) {
+  activeFilter = key;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  filterLocations();
+}
+
+function filterLocations() {
+  const q = document.getElementById('search').value.toLowerCase();
+  locations.forEach(loc => {
+    const match = (activeFilter === 'all' || loc.cat === activeFilter) &&
+      (!q || loc.name.toLowerCase().includes(q) || loc.desc.toLowerCase().includes(q) || loc.badges.join(' ').toLowerCase().includes(q));
+    const el = document.getElementById('item-' + loc.id);
+    if (el) el.style.display = match ? '' : 'none';
+    const marker = markers[loc.id];
+    if (marker) {
+      try { if (match) map.addLayer(marker); else map.removeLayer(marker); } catch(e) {}
+    }
+  });
+}
+
+// ── MARKERS ──
+const markers = {};
+
+function makePopupHTML(loc) {
+  const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${loc.lat},${loc.lng}&travelmode=walking`;
+  return `
+    <div class="popup-top" style="border-top:3px solid ${loc.color}">
+      <div class="popup-cat" style="color:${loc.color}">${cats[loc.cat]?.label || loc.cat}</div>
+      <div class="popup-name">${loc.icon} ${loc.name}</div>
+    </div>
+    <div class="popup-body">
+      <div class="popup-badges">${loc.badges.map(b=>`<span class="badge">${b}</span>`).join('')}</div>
+      <div class="popup-desc">${loc.desc}</div>
+      <div class="popup-tip"><strong>💡 Tip:</strong> ${loc.tip}</div>
+      <div class="popup-actions">
+        <a class="popup-btn primary" href="${mapsUrl}" target="_blank">🗺️ Directions</a>
+        <button class="popup-btn secondary" onclick="openSV('${loc.name.replace(/'/g,"\\'")}','${loc.lat}','${loc.lng}')">👁️ Street View</button>
+      </div>
+    </div>`;
+}
+
+function createIcon(loc, isActive) {
+  const s = isActive ? 36 : 28;
+  return L.divIcon({
+    className: '',
+    html: `<div style="width:${s+4}px;height:${s+8}px;display:flex;align-items:flex-start;justify-content:center">
+      <div style="width:${s}px;height:${s}px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);
+        background:${loc.color};display:flex;align-items:center;justify-content:center;
+        box-shadow:0 3px 10px rgba(0,0,0,0.45);
+        border:${isActive ? '2.5px solid rgba(255,255,255,0.95)' : '2px solid rgba(255,255,255,0.35)'};
+        transition:all 0.15s;">
+        <span style="transform:rotate(45deg);font-size:${isActive?14:12}px;display:block">${loc.icon}</span>
+      </div>
+    </div>`,
+    iconSize: [s+4, s+8],
+    iconAnchor: [(s+4)/2, s+8],
+    popupAnchor: [0, -(s+8)]
+  });
+}
+
+let prevActiveLoc = null;
+
+function openPopup(loc) {
+  // Reset previous active pin icon
+  if (prevActiveLoc && prevActiveLoc.id !== loc.id) {
+    markers[prevActiveLoc.id]?.setIcon(createIcon(prevActiveLoc, false));
+  }
+  prevActiveLoc = loc;
+
+  // Set this pin to active size
+  markers[loc.id]?.setIcon(createIcon(loc, true));
+
+  // Update sidebar highlight
+  document.querySelectorAll('.list-item').forEach(el => el.style.borderLeftColor = 'transparent');
+  const el = document.getElementById('item-' + loc.id);
+  if (el) { el.style.borderLeftColor = loc.color; el.scrollIntoView({ behavior:'smooth', block:'nearest' }); }
+
+  // Update popup content and open
+  markers[loc.id]?.setPopupContent(makePopupHTML(loc));
+  markers[loc.id]?.openPopup();
+}
+
+// Reset active pin when popup closes
+map.on('popupclose', () => {
+  if (prevActiveLoc) {
+    markers[prevActiveLoc.id]?.setIcon(createIcon(prevActiveLoc, false));
+    prevActiveLoc = null;
+  }
+  document.querySelectorAll('.list-item').forEach(el => el.style.borderLeftColor = 'transparent');
+});
+
+// ── BUILD MAP & LIST ──
+function buildList() {
+  const list = document.getElementById('list');
+  locations.forEach(loc => {
+    // Create marker with popup pre-bound once
+    const marker = L.marker([loc.lat, loc.lng], { icon: createIcon(loc, false) })
+      .bindPopup(makePopupHTML(loc), { maxWidth: 290, autoPan: true, closeButton: true })
+      .addTo(map);
+
+    marker.on('click', () => {
+      map.setView([loc.lat, loc.lng], Math.max(map.getZoom(), 16));
+      openPopup(loc);
+    });
+    markers[loc.id] = marker;
+
+    // List item
+    const item = document.createElement('div');
+    item.className = 'list-item';
+    item.id = 'item-' + loc.id;
+    item.style.borderLeftColor = 'transparent';
+    item.innerHTML = `
+      <div class="list-icon" style="background:${loc.color}22;color:${loc.color}">${loc.icon}</div>
+      <div class="list-text">
+        <div class="list-name">${loc.name}</div>
+        <div class="list-desc">${loc.badges.join(' · ')}</div>
+      </div>`;
+    item.onclick = () => {
+      map.setView([loc.lat, loc.lng], Math.max(map.getZoom(), 16));
+      openPopup(loc);
+    };
+    list.appendChild(item);
+  });
+}
+
+// ── STREET VIEW ──
+function openSV(name, lat, lng) {
+  document.getElementById('sv-title').textContent = '📍 ' + name;
+  // Use Google Maps embed in street view mode
+  const src = `https://maps.google.com/maps?q=${lat},${lng}&z=18&output=embed&layer=c`;
+  document.getElementById('sv-frame').src = src;
+  document.getElementById('sv-modal').classList.add('show');
+}
+
+function closeSV() {
+  document.getElementById('sv-modal').classList.remove('show');
+  document.getElementById('sv-frame').src = '';
+}
+
+// ── GEOLOCATION — always-on persistent tracking ──
+let geoMarker = null;
+let geoAccCircle = null;
+let geoWatchId = null;
+let geoActive = false;
+let lastAlertDist = null;
+
+function locateMe() {
+  const btn = document.getElementById('geo-btn');
+  if (!navigator.geolocation) {
+    showAlert('❌ Geolocation not available on this browser/device.');
+    return;
+  }
+  if (!geoActive) {
+    geoActive = true;
+    btn.classList.add('active');
+    btn.title = 'Tracking ON — tap to stop';
+    showAlert('📍 Location tracking started…');
+
+    geoWatchId = navigator.geolocation.watchPosition(pos => {
+      const { latitude: lat, longitude: lng, accuracy } = pos.coords;
+
+      // Create or update the "You Are Here" marker
+      if (!geoMarker) {
+        geoMarker = L.marker([lat, lng], {
+          icon: L.divIcon({
+            className: '',
+            html: `<div style="
+              width:18px;height:18px;border-radius:50%;
+              background:#4a9eff;border:3px solid #fff;
+              box-shadow:0 0 0 5px rgba(74,158,255,0.3),0 0 20px rgba(74,158,255,0.5);
+            "></div>`,
+            iconSize: [18,18], iconAnchor: [9,9]
+          }),
+          zIndexOffset: 2000
+        }).addTo(map);
+        geoMarker.bindPopup('<div style="color:#111;font-size:13px;font-weight:600;padding:4px 2px">📍 You are here<br><span style="font-size:11px;font-weight:400;color:#666">Accuracy: ±' + Math.round(accuracy) + ' m</span></div>');
+        map.setView([lat, lng], 17);
+      } else {
+        geoMarker.setLatLng([lat, lng]);
+        geoMarker.getPopup()?.setContent('<div style="color:#111;font-size:13px;font-weight:600;padding:4px 2px">📍 You are here<br><span style="font-size:11px;font-weight:400;color:#666">Accuracy: ±' + Math.round(accuracy) + ' m</span></div>');
+      }
+
+      // Accuracy circle
+      if (geoAccCircle) { map.removeLayer(geoAccCircle); }
+      geoAccCircle = L.circle([lat, lng], {
+        radius: accuracy, color: '#4a9eff',
+        fillColor: '#4a9eff', fillOpacity: 0.08,
+        weight: 1, opacity: 0.35
+      }).addTo(map);
+
+      // Proximity alerts (throttled)
+      const dShip = getDistM(lat, lng, 18.463122, -66.111741);
+      const dMorro = getDistM(lat, lng, 18.4706, -66.1247);
+
+      if (dShip < 120 && lastAlertDist !== 'ship') {
+        lastAlertDist = 'ship';
+        showAlert('🚢 You\'re right at the ship! Ready to board.');
+      } else if (dShip < 350 && lastAlertDist !== 'ship_near') {
+        lastAlertDist = 'ship_near';
+        showAlert('🚢 Ship is ' + Math.round(dShip) + ' m away — almost back!');
+      } else if (dMorro < 80 && lastAlertDist !== 'morro') {
+        lastAlertDist = 'morro';
+        showAlert('⚔️ You\'ve reached El Morro! Entry is $10.');
+      }
+    }, err => {
+      const msgs = { 1:'Location permission denied. Enable in browser settings.', 2:'Location unavailable.', 3:'Location request timed out.' };
+      showAlert('❌ ' + (msgs[err.code] || 'Location error'));
+      geoActive = false;
+      btn.classList.remove('active');
+    }, { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 });
+  } else {
+    // Turn off
+    geoActive = false;
+    btn.classList.remove('active');
+    btn.title = 'Find my location';
+    if (geoWatchId !== null) { navigator.geolocation.clearWatch(geoWatchId); geoWatchId = null; }
+    if (geoMarker) { map.removeLayer(geoMarker); geoMarker = null; }
+    if (geoAccCircle) { map.removeLayer(geoAccCircle); geoAccCircle = null; }
+    lastAlertDist = null;
+    showAlert('📍 Location tracking stopped.');
+  }
+}
+
+function getDistM(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const dLat = (lat2-lat1)*Math.PI/180;
+  const dLng = (lng2-lng1)*Math.PI/180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function showAlert(msg) {
+  const d = document.createElement('div');
+  d.style.cssText = 'position:fixed;top:80px;left:50%;transform:translateX(-50%);background:#0f1923;border:1px solid rgba(255,255,255,0.15);color:#e8edf2;padding:10px 20px;border-radius:8px;font-size:13px;font-weight:600;z-index:9999;box-shadow:0 8px 30px rgba(0,0,0,0.5)';
+  d.textContent = msg;
+  document.body.appendChild(d);
+  setTimeout(() => d.remove(), 3000);
+}
+
+// ── FLY TO SHIP ──
+function flyToShip() {
+  map.flyTo([18.463122, -66.111741], 17, { duration: 1.5 });
+}
+
+// ── CLOCK ──
+function updateClock() {
+  const now = new Date();
+  const prTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Puerto_Rico' }));
+  const h = prTime.getHours();
+  const m = String(prTime.getMinutes()).padStart(2,'0');
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 || 12;
+  document.getElementById('clock-time').textContent = `${h12}:${m} ${ampm}`;
+
+  const total = 18.5 * 60 + 30; // 7:30 PM = 19:30
+  const current = h * 60 + prTime.getMinutes();
+  const statusEl = document.getElementById('clock-status');
+
+  if (current < 13 * 60) {
+    statusEl.style.color = '#f5b942';
+    statusEl.textContent = 'Not disembarked yet';
+  } else if (current < 19 * 60) {
+    const left = 19 * 60 + 30 - current;
+    const hrs = Math.floor(left / 60);
+    const mins = left % 60;
+    statusEl.style.color = left < 60 ? '#e74c3c' : '#00c9b1';
+    statusEl.textContent = `${hrs}h ${mins}m until boarding`;
+    if (left <= 60 && left > 55) showAlert('⚠️ 1 hour left — start heading back!');
+  } else {
+    statusEl.style.color = '#e74c3c';
+    statusEl.textContent = '⚠️ Should be on ship!';
+  }
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ── DRAW SUGGESTED ROUTE ──
+const routeCoords = [
+  [18.463122,-66.111741],// pier — start
+  [18.463506,-66.114443],// casita de rones
+  [18.463342,-66.118547],// fuente raíces
+  [18.465101,-66.119527],// puerta de san juan gate
+  [18.465593,-66.119691],// plazuela la rogativa
+  [18.465166,-66.119440],// paseo del morro (wall path start)
+  [18.466150,-66.121863],// parque de los gatos
+  [18.467792,-66.118999],// quinto centenario
+  [18.4706,  -66.1247],  // el morro
+  [18.4695,  -66.1232],  // kite lawn
+  [18.468388,-66.110319],// garita del diablo
+  [18.467315,-66.117416],// calle san sebastian
+  [18.4672,  -66.11706], // la factoria
+  [18.466256,-66.118249],// el batey
+  [18.466456,-66.118286],// calle del cristo
+  [18.466731,-66.116573],// deaverdura
+  [18.465942,-66.118046],// cathedral / ponce de leon
+  [18.4652,  -66.1178],  // la fortaleza
+  [18.463963,-66.112053],// walgreens
+  [18.463122,-66.111741],// pier — return
+];
+
+L.polyline(routeCoords, {
+  color: '#00c9b1',
+  weight: 3,
+  opacity: 0.5,
+  dashArray: '8 6',
+}).addTo(map);
+
+// ── INIT ──
+buildFilters();
+buildList();
+</script>
+</body>
+</html>
